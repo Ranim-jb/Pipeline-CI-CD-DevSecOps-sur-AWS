@@ -1,0 +1,127 @@
+name: DevSecOps CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: devsecops-demo
+  ECS_CLUSTER: devsecops-demo
+  ECS_SERVICE: devsecops-demo
+  CONTAINER_NAME: api
+
+jobs:
+  security:
+    name: Contrôles de sécurité
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (historique complet pour Gitleaks)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Détection de secrets - Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tests unitaires - pytest
+        run: |
+          pip install -r requirements.txt pytest
+          pytest -q
+
+      - name: SAST - Semgrep
+        run: |
+          pip install semgrep
+          semgrep --config .semgrep/rules.yml --error app tests
+
+      - name: Scan des dépendances et fichiers - Trivy (fs)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Build de l'image pour analyse
+        run: docker build -t devsecops-demo:scan .
+
+      - name: Scan de l'image Docker - Trivy (image)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: devsecops-demo:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Scan Terraform - Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          config_file: .checkov.yaml
+          soft_fail: false
+
+  build-and-deploy:
+    name: Build et déploiement AWS
+    needs: security
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Learner Lab : pas d'OIDC possible, on utilise les identifiants TEMPORAIRES du lab
+      # (secrets GitHub à renouveler à chaque démarrage du lab).
+      - name: Authentification AWS (identifiants temporaires du Learner Lab)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Connexion à ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build et push de l'image (tag = SHA du commit)
+        id: build-image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Récupérer la définition de tâche actuelle
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition devsecops-demo \
+            --query taskDefinition > task-definition.json
+
+      - name: Injecter la nouvelle image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Déployer sur ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true

@@ -1,0 +1,10 @@
+rules:
+  - id: no-hardcoded-passwords
+    message: "Éviter les mots de passe codés en dur. Utiliser un secret manager ou une variable d'environnement."
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern: $X = "$VALUE"
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i).*(pass(word)?|secret|token|api_?key).*

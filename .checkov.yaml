@@ -1,0 +1,5 @@
+# Exceptions limitées au prototype universitaire.
+# Elles sont documentées pour éviter de masquer un contrôle de sécurité.
+skip-check:
+  - CKV_AWS_333 # Démo : tâche Fargate directement accessible pour test HTTP.
+  - CKV_AWS_382 # Démo : sortie Internet requise pour télécharger l'image et les dépendances.

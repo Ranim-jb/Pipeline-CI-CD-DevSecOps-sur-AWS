@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+.env
+.env.*
+
+# Identifiants AWS : ne jamais commiter
+.aws/
+credentials
+*.pem
+*.tfplan
