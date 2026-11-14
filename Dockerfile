@@ -16,4 +16,4 @@ COPY app ./app
 
 USER app
 EXPOSE 8080
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app.app:app"]
+CMD ["gunicorn", "--worker-tmp-dir", "/dev/shm", "--bind", "0.0.0.0:8080", "app.app:app"]
