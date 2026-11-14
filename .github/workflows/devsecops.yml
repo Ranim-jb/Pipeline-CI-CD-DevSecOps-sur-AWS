@@ -43,7 +43,7 @@ jobs:
           semgrep --config .semgrep/rules.yml --error app tests
 
       - name: Scan des dépendances et fichiers - Trivy (fs)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -55,7 +55,7 @@ jobs:
         run: docker build -t devsecops-demo:scan .
 
       - name: Scan de l'image Docker - Trivy (image)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
           image-ref: devsecops-demo:scan
