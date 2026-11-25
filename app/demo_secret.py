@@ -1,1 +1,1 @@
-aws_secret = "AKIAQWERTYUIOPASDFGH" 
+aws_secret = "FAKE_SECRET_FOR_SECURITY_TEST_ONLY" 
